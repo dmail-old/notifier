@@ -1,4 +1,4 @@
-var proto = include('@dmail/proto');
+var proto = include('dmail/proto');
 
 var Binding = proto.extend({
 	fn: null,
