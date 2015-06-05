@@ -5,7 +5,6 @@ var Binding = proto.extend({
 	bind: null,
 	isOnce: false,
 	active: true,
-
 	execArgs: null,
 	applyObjectMethod: function(args){
 		return this.listener[this.bind].apply(this.fn, args);
@@ -56,6 +55,12 @@ var Notifier = proto.extend({
 	args: null, // curried arguments
 	bind: null, // default bind for function listener
 	method: null, // default method for object listener
+
+	// http://benalman.com/projects/jquery-throttle-debounce-plugin/
+	interval: 0, // ignore subsequent calls hapenning before interval ellapsed
+	latency: 0, // delay last call until latency ellapsed
+	lastCall: null,
+	timeout: null,
 
 	constructor: function(name){
 		this.name = name;
@@ -137,7 +142,7 @@ var Notifier = proto.extend({
 		if( this.size === 1 ) this.open();
 
 		if( this.memorize && this.savedArgs ){
-			this.applyWatcher(binding, this.savedArgs);
+			this.applyBinding(binding, this.savedArgs);
 		}
 
 		return binding;
@@ -178,6 +183,38 @@ var Notifier = proto.extend({
 		if( binding.active === true ){
 			if( this.memorize ){
 				this.savedArgs = args;
+			}
+
+			var interval, latency, now, last, prevent, diff;
+
+			interval = this.interval;
+			latency = this.latency;
+
+			if( interval || latency ){
+				now = new Date();
+				last = this.lastCall;
+				diff = last ? now - last : 0;
+
+				if( interval ){
+					// prevent subsequent calls hapenning before interval ellapsed
+					prevent = last && diff < interval;
+				}
+				if( latency ){
+					// prevent calls hapening before latency ellapsed
+					prevent = diff < latency;
+
+					if( prevent ){
+						// clear any previously delayed call
+						clearTimeout(this.timeout);
+						// delay the call
+						this.timeout = setTimeout(this.applyBinding.bind(this, binding, args), latency - diff);
+					}
+				}
+
+				this.lastCall = now;
+				if( prevent ){
+					return false;
+				}
 			}
 
 			if( binding.isOnce === true ){
