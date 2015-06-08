@@ -5,30 +5,32 @@ Inspired from [js-signals](https://github.com/millermedeiros/js-signals)
 ## Example
 
 ```javascript
-var notifier = require('notifier').create();
+var notifier = include('notifier').create();
 
 notifier.add(console.log, console);
 notifier.notify('foo', 'bar'); // logs 'foo bar'
 ```
 
-## createBinding(listener, bind = null, isOnce = false)
+## add(listener, bind = null, once = false)
 
-This function is used internally, it returns an object representing the listener/bind duo.<br />
-listener can be a function with an optional bind.<br />
-listener can be an object with in case bind is a required method name.<br />
-isOnce indicates if the binding wants to be removed just after being executed.
+Register the duo listener/bind (duplicate listeners are removed).<br />
+If once is true, the listener will be removed just before being called.
 
 ```javascript
-var Notifier = require('notifier');
-var consoleFunctionBinding = Notifier.createBinding(console.log, console);
-var consoleMethodBinding = Notifier.createBinding(console, 'log');
+var notifier = require('notifier').create();
 
-consoleFunctionBinding.exec('foo', 'bar'); // logs 'foo bar'
-consoleMethodBinding.exec('foo', 'bar'); // logs 'foo bar'
+notifier.add(console.log, console);
+notifier.add({foo: function(){ console.log('foo'); }}, 'foo');
+notifier.add(function(){ console.log('once');  }, null, true);
 
-// you can also use execArgs
-consoleMethodBinding.execArgs(['foo', 'bar']); // logs 'foo bar'
+notifier.notify('boo'); // logs 'boo', 'foo', 'once'
+notifier.size; // 2
+notifier.notify('boo'); // logs 'boo', 'foo'
 ```
+
+## addOnce(listener, bind)
+
+Shortcut to add a listener once.
 
 ## get(listener, bind = null)
 
@@ -58,27 +60,6 @@ notifier.add(foo);
 notifier.has(foo); // true
 ```
 
-## add(listener, bind = null, once = false)
-
-Register the duo listener/bind (duplicate listeners are removed).<br />
-If once is true, the listener will be removed just before being called.
-
-```javascript
-var notifier = require('notifier').create();
-
-notifier.add(console.log, console);
-notifier.add({foo: function(){ console.log('foo'); }}, 'foo');
-notifier.add(function(){ console.log('once');  }, null, true);
-
-notifier.notify('boo'); // logs 'boo', 'foo', 'once'
-notifier.size; // 2
-notifier.notify('boo'); // logs 'boo', 'foo'
-```
-
-## addOnce(listener, bind)
-
-Shortcut to add a listener once.
-
 ## remove(listener, bind = null)
 
 Remove the duo listener/bind from the notifier
@@ -99,7 +80,7 @@ notifier.notify(); // nothing is logged
 
 ## disable()
 
-notify() will have no effect
+notify() is noop
 
 ## enable()
 
@@ -120,6 +101,7 @@ Default binding for function listeners
 ```javascript
 var notifier = require('notifier').create();
 notifier.bind = 'foo';
+
 notifier.add(function(){ console.log(this); });
 notifier.add(function(){ console.log(this); }, 'bar');
 notifier.notify(); // logs 'foo', 'bar'
@@ -132,6 +114,7 @@ Default method for object listeners
 ```javascript
 var notifier = require('notifier').create();
 notifier.method = 'log';
+
 notifier.add(console);
 notifier.add(console, 'warn');
 notifier.notify('foo'); // logs 'foo' & warn 'foo'
@@ -144,8 +127,37 @@ Curried arguments
 ```javascript
 var notifier = require('notifier').create();
 notifier.args = ['foo'];
+
 notifier.add(console.log, console);
 notifier.notify('bar'); // logs 'foo bar'
+```
+
+## latency
+
+Delay call after latency has ellapsed.
+
+```javascript
+var notifier = include('notifier').create();
+notifier.latency = 100;
+
+notifier.add(console.log, console);
+notifier.notify('foo'); // ignored
+notifier.notify('bar'); // logs 'bar' after 100ms
+setTimeout(notifier.notify.bind(notifier, 'boo'), 200); // logs 'boo' after 300ms
+```
+
+## interval
+
+Ignore subsequent calls hapenning before interval ellapsed
+
+```javascript
+var notifier = include('notifier').create();
+notifier.interval = 100;
+
+notifier.add(console.log, console);
+notifier.notify('foo'); // logs 'foo' after 100ms
+notifier.notify('bar'); // ignored
+setTimeout(notifier.notify.bind(notifier, 'boo'), 200); // logs 'boo' after 200ms
 ```
 
 ## memorize
@@ -153,9 +165,9 @@ notifier.notify('bar'); // logs 'foo bar'
 Save arguments when notify() is called and call immediatly listeners added after.
 
 ```javascript
-var notifier = require('notifier').create();
-
+var notifier = include('notifier').create();
 notifier.memorize = true;
+
 notifier.notify('foo');
 notifier.add(console.log); // logs 'foo'
 ```
@@ -166,7 +178,7 @@ Use with memorize, forget previously saved arguments
 
 ```javascript
 var object = {
-  paused: Notifier.create(),
+  paused: include('notifier').create(),
 
   pause: function(){
     this.paused.notify('pause');
@@ -182,4 +194,23 @@ object.paused.memorize = true;
 object.pause();
 object.resume();
 object.paused.add(console.log); // logs nothing because paused.forget() was called by resume
+```
+
+## createBinding(listener, bind = null, isOnce = false)
+
+This function is used internally, it returns an object representing the listener/bind duo.<br />
+listener can be a function with an optional bind.<br />
+listener can be an object with in case bind is a required method name.<br />
+isOnce indicates if the binding wants to be removed just after being executed.
+
+```javascript
+var Notifier = include('notifier');
+var consoleFunctionBinding = Notifier.createBinding(console.log, console);
+var consoleMethodBinding = Notifier.createBinding(console, 'log');
+
+consoleFunctionBinding.exec('foo', 'bar'); // logs 'foo bar'
+consoleMethodBinding.exec('foo', 'bar'); // logs 'foo bar'
+
+// you can also use execArgs
+consoleMethodBinding.execArgs(['foo', 'bar']); // logs 'foo bar'
 ```
