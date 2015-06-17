@@ -3,9 +3,21 @@ var proto = include('dmail/proto');
 var Binding = proto.extend({
 	fn: null,
 	bind: null,
-	isOnce: false,
-	active: true,
 	execArgs: null,
+
+	// http://benalman.com/projects/jquery-throttle-debounce-plugin/
+	options: {
+		once: false,
+		disabled: false,
+		interval: 0, // ignore subsequent calls hapenning before interval ellapsed
+		latency: 0 // delay last call until latency ellapsed
+	},
+
+	lastCall: null,
+	isDisabled: false, // can be disabled by disabled, interval, latency
+	isOnce: false, // when the options once is true
+	delay: 0,
+
 	applyObjectMethod: function(args){
 		return this.listener[this.bind].apply(this.fn, args);
 	},
@@ -13,7 +25,7 @@ var Binding = proto.extend({
 		return this.listener.apply(this.bind, args);
 	},
 
-	constructor: function(listener, bind, once){
+	constructor: function(listener, bind, options){
 		if( typeof listener == 'object' ){
 			this.execArgs = this.applyObjectMethod;
 			if( typeof bind != 'string' ){
@@ -29,7 +41,52 @@ var Binding = proto.extend({
 
 		this.listener = listener;
 		this.bind = bind;
-		this.isOnce = Boolean(once);
+		this.options = options ? Object.assign({}, this.options, options) : this.options;
+	},
+
+	update: function(){
+		var isPrevented, delay, interval, latency, now, last, diff;
+
+		isPrevented = this.options.disabled;
+		delay = 0;
+		interval = this.options.interval;
+		latency = this.options.latency;
+
+		if( interval || latency ){
+			now = new Date();
+			last = this.lastCall;
+			diff = last ? now - last : 0;
+
+			if( interval ){
+				// prevent subsequent calls hapenning before interval ellapsed
+				if( last && diff < interval ) isPrevented = true;
+			}
+			if( latency ){
+				// prevent calls hapening before latency ellapsed
+				if( diff < latency ){
+					isPrevented = true;
+					// delay this binding of some ms
+					delay = latency - diff;
+				}
+			}
+
+			this.lastCall = now;
+		}
+
+		this.isPrevented = isPrevented;
+		this.delay = delay;
+		this.isOnce = this.options.isOnce;
+	},
+
+	compareOptions: function(options){
+		var bindingOptions = this.options, defaultOptions = Binding.options, useDefaultOptions = bindingOptions == defaultOptions, key;
+
+		// default options
+		if( useDefaultOptions ) return !options || options == defaultOptions;
+		for(key in bindingOptions){
+			if( options[key] != bindingOptions[key] ) return false;
+		}
+		return true;
 	},
 
 	is: function(listener, bind){
@@ -55,11 +112,6 @@ var Notifier = proto.extend({
 	args: null, // curried arguments
 	bind: null, // default bind for function listener
 	method: null, // default method for object listener
-
-	// http://benalman.com/projects/jquery-throttle-debounce-plugin/
-	interval: 0, // ignore subsequent calls hapenning before interval ellapsed
-	latency: 0, // delay last call until latency ellapsed
-	lastCall: null,
 	timeout: null,
 
 	constructor: function(name){
@@ -126,17 +178,17 @@ var Notifier = proto.extend({
 		return this.get(listener, bind) !== null;
 	},
 
-	add: function(listener, bind, once){
+	add: function(listener, bind, options){
 		var binding = this.get(listener, bind);
 
 		if( binding ){
-			if( binding.isOnce != once ){
-				throw new Error('you cannot add() & addOnce() the same listener');
+			if( false === binding.compareOptions(options) ){
+				throw new Error('you cannot add() same listener with different options');
 			}
 			return false;
 		}
 
-		binding = this.createBinding(listener, bind, once);
+		binding = this.createBinding(listener, bind, options);
 		this.bindings.push(binding);
 		this.size++;
 		if( this.size === 1 ) this.open();
@@ -149,7 +201,7 @@ var Notifier = proto.extend({
 	},
 
 	addOnce: function(listener, bind){
-		return this.add(listener, bind, true);
+		return this.add(listener, bind, {isOnce: true});
 	},
 
 	remove: function(listener, bind){
@@ -180,49 +232,30 @@ var Notifier = proto.extend({
 	},
 
 	applyBinding: function(binding, args){
-		if( binding.active === true ){
-			if( this.memorize ){
-				this.savedArgs = args;
-			}
-
-			var interval, latency, now, last, prevent, diff;
-
-			interval = this.interval;
-			latency = this.latency;
-
-			if( interval || latency ){
-				now = new Date();
-				last = this.lastCall;
-				diff = last ? now - last : 0;
-
-				if( interval ){
-					// prevent subsequent calls hapenning before interval ellapsed
-					prevent = last && diff < interval;
-				}
-				if( latency ){
-					// prevent calls hapening before latency ellapsed
-					prevent = diff < latency;
-
-					if( prevent ){
-						// clear any previously delayed call
-						clearTimeout(this.timeout);
-						// delay the call
-						this.timeout = setTimeout(this.applyBinding.bind(this, binding, args), latency - diff);
-					}
-				}
-
-				this.lastCall = now;
-				if( prevent ){
-					return false;
-				}
-			}
-
-			if( binding.isOnce === true ){
-				this.remove(binding);
-			}
-
-			return binding.execArgs(args);
+		if( this.memorize ){
+			this.savedArgs = args;
 		}
+
+		binding.update();
+
+		// delay a binding call
+		if( binding.delay ){
+			// clear any previously delayed call
+			clearTimeout(this.timeout);
+			// delay the call
+			this.timeout = setTimeout(this.applyBinding.bind(this, binding, args), binding.delay);
+		}
+
+		// prevent the binding call (keep after delay because isDisabled may change after delay is ellapsed)
+		if( binding.isDisabled ){
+			return false;
+		}
+
+		if( binding.isOnce ){
+			this.remove(binding);
+		}
+
+		return binding.execArgs(args);
 	},
 
 	notifyArgs: function(args){
